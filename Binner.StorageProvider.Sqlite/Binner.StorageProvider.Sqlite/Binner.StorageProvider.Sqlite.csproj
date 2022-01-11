@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Authors>Michael Brown</Authors>
+    <Company>Refactor Software</Company>
+    <Description>Sqlite storage provider for Binner</Description>
+    <PackageProjectUrl>https://github.com/replaysMike/Binner.StorageProvider.Sqlite</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/replaysMike/Binner.StorageProvider.Sqlite</RepositoryUrl>
+    <PackageTags>binner storage provider sqllite refactor michael brown</PackageTags>
+    <PackageReleaseNotes>Sqlite storage provider for Binner</PackageReleaseNotes>
+    <Version>1.0.0</Version>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageIcon>binner.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="binner.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Binner.Model.Common" Version="1.0.4" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="6.0.1" />
+    <PackageReference Include="TypeSupport" Version="1.1.12" />
+  </ItemGroup>
+
+</Project>
