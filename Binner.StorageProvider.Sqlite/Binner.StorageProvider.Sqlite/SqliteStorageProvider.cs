@@ -1,6 +1,6 @@
 ﻿using Binner.Model.Common;
-using Microsoft.Data.Sqlite;
 using System.Data;
+using System.Data.SQLite;
 using System.Data.SqlTypes;
 using System.Linq.Expressions;
 using TypeSupport.Extensions;
@@ -53,7 +53,7 @@ namespace Binner.StorageProvider.SqlServer
 
         public async Task<long> GetPartsCountAsync(IUserContext userContext)
         {
-            var query = $"SELECT COUNT_BIG(*) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId);";
+            var query = $"SELECT COUNT(*) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId);";
             var result = await ExecuteScalarAsync<long>(query, new { UserId = userContext?.UserId });
             return result;
         }
@@ -61,8 +61,8 @@ namespace Binner.StorageProvider.SqlServer
         public async Task<decimal> GetPartsValueAsync(IUserContext userContext)
         {
             var query = $"SELECT SUM(Cost * Quantity) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId);";
-            var result = await ExecuteScalarAsync<decimal>(query, new { UserId = userContext?.UserId });
-            return result;
+            var result = await ExecuteScalarAsync<double>(query, new { UserId = userContext?.UserId });
+            return Convert.ToDecimal(result);
         }
 
         public async Task<ICollection<Part>> GetLowStockAsync(PaginatedRequest request, IUserContext userContext)
@@ -88,7 +88,7 @@ CASE WHEN @OrderBy = 'BinNumber2' THEN BinNumber2 ELSE NULL END {sortDirection},
 CASE WHEN @OrderBy = 'Manufacturer' THEN Manufacturer ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'ManufacturerPartNumber' THEN ManufacturerPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection} 
-OFFSET {offsetRecords} ROWS FETCH NEXT {request.Results} ROWS ONLY;";
+LIMIT {request.Results} OFFSET {offsetRecords};";
             var result = await SqlQueryAsync<Part>(query, new
             {
                 Results = request.Results,
@@ -105,7 +105,6 @@ OFFSET {offsetRecords} ROWS FETCH NEXT {request.Results} ROWS ONLY;";
             part.UserId = userContext?.UserId;
             var query =
 $@"INSERT INTO Parts (Quantity, LowStockThreshold, PartNumber, PackageType, MountingTypeId, DigiKeyPartNumber, MouserPartNumber, Description, PartTypeId, ProjectId, Keywords, DatasheetUrl, Location, BinNumber, BinNumber2, UserId, Cost, Manufacturer, ManufacturerPartNumber, LowestCostSupplier, LowestCostSupplierUrl, ProductUrl, ImageUrl, DateCreatedUtc) 
-output INSERTED.PartId 
 VALUES(@Quantity, @LowStockThreshold, @PartNumber, @PackageType, @MountingTypeId, @DigiKeyPartNumber, @MouserPartNumber, @Description, @PartTypeId, @ProjectId, @Keywords, @DatasheetUrl, @Location, @BinNumber, @BinNumber2, @UserId, @Cost, @Manufacturer, @ManufacturerPartNumber, @LowestCostSupplier, @LowestCostSupplierUrl, @ProductUrl, @ImageUrl, @DateCreatedUtc);
 ";
             return await InsertAsync<Part, long>(query, part, (x, key) => { x.PartId = key; });
@@ -116,7 +115,6 @@ VALUES(@Quantity, @LowStockThreshold, @PartNumber, @PackageType, @MountingTypeId
             project.UserId = userContext?.UserId;
             var query =
 $@"INSERT INTO Projects (Name, Description, Location, Color, UserId, DateCreatedUtc) 
-output INSERTED.ProjectId 
 VALUES(@Name, @Description, @Location, @Color, @UserId, @DateCreatedUtc);
 ";
             return await InsertAsync<Project, long>(query, project, (x, key) => { x.ProjectId = key; });
@@ -230,8 +228,8 @@ INNER JOIN (
             {
                 query =
 $@"INSERT INTO PartTypes (ParentPartTypeId, Name, UserId, DateCreatedUtc) 
-output INSERTED.PartTypeId 
-VALUES (@ParentPartTypeId, @Name, @UserId, @DateCreatedUtc);";
+VALUES (@ParentPartTypeId, @Name, @UserId, @DateCreatedUtc);
+";
                 partType = await InsertAsync<PartType, long>(query, partType, (x, key) => { x.PartTypeId = key; });
             }
             return partType;
@@ -318,7 +316,7 @@ CASE WHEN @OrderBy = 'BinNumber2' THEN BinNumber2 ELSE NULL END {sortDirection},
 CASE WHEN @OrderBy = 'Manufacturer' THEN Manufacturer ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'ManufacturerPartNumber' THEN ManufacturerPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection} 
-OFFSET {offsetRecords} ROWS FETCH NEXT {request.Results} ROWS ONLY;";
+LIMIT {request.Results} OFFSET {offsetRecords};";
             var result = await SqlQueryAsync<Part>(query, new
             {
                 Results = request.Results,
@@ -370,8 +368,8 @@ CASE WHEN @OrderBy IS NULL THEN ProjectId ELSE NULL END {sortDirection},
 CASE WHEN @OrderBy = 'Name' THEN Name ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Description' THEN Description ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Location' THEN Location ELSE NULL END {sortDirection}, 
-CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection} 
-OFFSET {offsetRecords} ROWS FETCH NEXT {request.Results} ROWS ONLY;";
+CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection}
+LIMIT {request.Results} OFFSET {offsetRecords};";
             var result = await SqlQueryAsync<Project>(query, new
             {
                 Results = request.Results,
@@ -462,16 +460,15 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
 
         private async Task<T> InsertAsync<T, TKey>(string query, T parameters, Action<T, TKey> keySetter)
         {
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     sqlCmd.Parameters.AddRange(CreateParameters<T>(parameters));
                     sqlCmd.CommandType = CommandType.Text;
                     var result = await sqlCmd.ExecuteScalarAsync();
-                    if (result != null)
-                        keySetter.Invoke(parameters, (TKey)result);
+                    keySetter.Invoke(parameters, (TKey)(object)connection.LastInsertRowId);
                 }
                 connection.Close();
             }
@@ -482,10 +479,10 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
         {
             var results = new List<T>();
             var type = typeof(T).GetExtendedType();
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     if (parameters != null)
                         sqlCmd.Parameters.AddRange(CreateParameters(parameters));
@@ -499,6 +496,10 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
                             if (reader.HasColumn(prop.Name))
                             {
                                 var val = MapToPropertyValue(reader[prop.Name], prop.Type);
+                                if (val != null && val.GetType().IsPrimitive && prop.Type != val.GetType())
+                                {
+                                    val = ChangeNullableType(val, prop.Type);
+                                }
                                 newObj.SetPropertyValue(prop.PropertyInfo, val);
                             }
                         }
@@ -513,14 +514,18 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
         private async Task<T> ExecuteScalarAsync<T>(string query, object parameters = null)
         {
             T result;
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     sqlCmd.Parameters.AddRange(CreateParameters(parameters));
                     sqlCmd.CommandType = CommandType.Text;
-                    result = (T)await sqlCmd.ExecuteScalarAsync();
+                    var untypedResult = await sqlCmd.ExecuteScalarAsync();
+                    if (untypedResult != DBNull.Value)
+                        result = (T)untypedResult;
+                    else
+                        result = default(T);
                 }
                 connection.Close();
             }
@@ -530,10 +535,10 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
         private async Task<int> ExecuteAsync<T>(string query, T record)
         {
             var modified = 0;
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     sqlCmd.Parameters.AddRange(CreateParameters<T>(record));
                     sqlCmd.CommandType = CommandType.Text;
@@ -544,9 +549,9 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
             return modified;
         }
 
-        private SqliteParameter[] CreateParameters<T>(T record)
+        private SQLiteParameter[] CreateParameters<T>(T record)
         {
-            var parameters = new List<SqliteParameter>();
+            var parameters = new List<SQLiteParameter>();
             var extendedType = record.GetExtendedType();
             if (extendedType.IsDictionary)
             {
@@ -556,7 +561,7 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
                     var key = p.Key;
                     var val = p.Value;
                     var propertyMapped = MapFromPropertyValue(val);
-                    parameters.Add(new SqliteParameter(key.ToString(), propertyMapped));
+                    parameters.Add(new SQLiteParameter(key.ToString(), propertyMapped));
                 }
             }
             else
@@ -566,7 +571,7 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
                 {
                     var propertyValue = record.GetPropertyValue(property);
                     var propertyMapped = MapFromPropertyValue(propertyValue);
-                    parameters.Add(new SqliteParameter(property.Name, propertyMapped));
+                    parameters.Add(new SQLiteParameter(property.Name, propertyMapped));
                 }
             }
             return parameters.ToArray();
@@ -608,35 +613,34 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
 
         private async Task<bool> GenerateDatabaseIfNotExistsAsync<T>()
         {
-            var connectionStringBuilder = new SqliteConnectionStringBuilder(_config.ConnectionString);
+            var connectionStringBuilder = new SQLiteConnectionStringBuilder(_config.ConnectionString);
             var schemaGenerator = new SqliteSchemaGenerator<T>(connectionStringBuilder.DataSource);
-            var modified = 0;
+            var partTypesCount = 0l;
 
-            // Ensure database exists
-            var query = schemaGenerator.CreateDatabaseIfNotExists();
-            using (var connection = new SqliteConnection(GetMasterDbConnectionString(_config.ConnectionString)))
-            {
-                connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
-                {
-                    modified = (int)await sqlCmd.ExecuteScalarAsync();
-                }
-                connection.Close();
-            }
+            var dbFile = connectionStringBuilder.DataSource;
+            if (!File.Exists(dbFile))
+                SQLiteConnection.CreateFile(dbFile);
+
             // Ensure table schema exists
-            query = schemaGenerator.CreateTableSchemaIfNotExists();
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            var query = schemaGenerator.CreateTableSchemaIfNotExists();
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
-                    modified = (int)await sqlCmd.ExecuteScalarAsync();
+                    await sqlCmd.ExecuteNonQueryAsync();
+                }
+                // if seed data is missing, run the initial seed
+                using (var sqlCmd = new SQLiteCommand("SELECT COUNT(*) FROM PartTypes", connection))
+                {
+                    partTypesCount = (long)await sqlCmd.ExecuteScalarAsync();
                 }
                 connection.Close();
             }
-            if (modified > 0) await SeedInitialDataAsync();
 
-            return modified > 0;
+            if (partTypesCount == 0) await SeedInitialDataAsync();
+
+            return partTypesCount == 0;
         }
 
         private async Task<bool> SeedInitialDataAsync()
@@ -647,12 +651,12 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
             var modified = 0;
             foreach (var partType in defaultPartTypes.EnumValues)
             {
-                query += $"INSERT INTO PartTypes (Name, DateCreatedUtc) VALUES('{partType.Value}', GETUTCDATE());\r\n";
+                query += $"INSERT INTO PartTypes (Name, DateCreatedUtc) VALUES('{partType.Value}', datetime('now'));\r\n";
             }
-            using (var connection = new SqliteConnection(_config.ConnectionString))
+            using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
-                using (var sqlCmd = new SqliteCommand(query, connection))
+                using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     modified = await sqlCmd.ExecuteNonQueryAsync();
                 }
@@ -663,9 +667,26 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
 
         private string GetMasterDbConnectionString(string connectionString)
         {
-            var builder = new SqliteConnectionStringBuilder(connectionString);
+            var builder = new SQLiteConnectionStringBuilder(connectionString);
             builder.DataSource = "master";
             return builder.ToString();
+        }
+
+        public static object ChangeNullableType(object value, Type conversion)
+        {
+            var t = conversion;
+
+            if (t.IsGenericType && t.GetGenericTypeDefinition().Equals(typeof(Nullable<>)))
+            {
+                if (value == null)
+                {
+                    return null;
+                }
+
+                t = Nullable.GetUnderlyingType(t);
+            }
+
+            return Convert.ChangeType(value, t);
         }
 
         public void Dispose()

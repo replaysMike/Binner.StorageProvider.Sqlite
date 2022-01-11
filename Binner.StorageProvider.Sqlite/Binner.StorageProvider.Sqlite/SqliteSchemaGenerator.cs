@@ -7,47 +7,23 @@ namespace Binner.StorageProvider.SqlServer
     public class SqliteSchemaGenerator<T>
     {
         private string _dbName;
-        private ExtendedType _dbType;
         private ICollection<ExtendedProperty> _tables;
 
         public SqliteSchemaGenerator(string databaseName)
         {
             _dbName = databaseName;
-            _dbType = typeof(T).GetExtendedType();
             var properties = typeof(T).GetProperties(PropertyOptions.HasGetter);
-            _tables = properties.Where(x => x.Type.GetExtendedType().IsCollection).ToList();
+            _tables = properties.Where(x => x.Type.IsCollection).ToList();
         }
 
-        public string CreateDatabaseIfNotExists()
-        {
-            return $@"
-DECLARE @dbCreated INT = 0;
-IF (db_id(N'{_dbName}') IS NULL)
-BEGIN
-    CREATE DATABASE {_dbName};
-    SET @dbCreated = 1;
-END
-SELECT @dbCreated;
-";
-        }
-
-        public string CreateTableSchemaIfNotExists()
-        {
-            return $@"
-USE {_dbName};
--- create tables
-DECLARE @tablesCreated INT = 0;
-{string.Join("\r\n", GetTableSchemas())}
-SELECT @tablesCreated;
-";
-        }
+        public string CreateTableSchemaIfNotExists() => $@"{string.Join("\r\n", GetTableSchemas())}";
 
         private ICollection<string> GetTableSchemas()
         {
             var tableSchemas = new List<string>();
             foreach (var tableProperty in _tables)
             {
-                var tableExtendedType = tableProperty.Type.GetExtendedType();
+                var tableExtendedType = tableProperty.Type;
                 var columnProps = tableExtendedType.ElementType.GetProperties(PropertyOptions.HasGetter);
                 var tableSchema = new List<string>();
                 foreach (var columnProp in columnProps)
@@ -60,12 +36,12 @@ SELECT @tablesCreated;
         private string GetColumnSchema(ExtendedProperty prop)
         {
             var columnSchema = "";
-            var propExtendedType = prop.Type.GetExtendedType();
+            var propExtendedType = prop.Type;
             var maxLength = GetMaxLength(prop);
             if (propExtendedType.IsCollection)
             {
                 // store as string, data will be comma delimited
-                columnSchema = $"{prop.Name} nvarchar({maxLength})";
+                columnSchema = $"{prop.Name} text";
             }
             else
             {
@@ -81,7 +57,8 @@ SELECT @tablesCreated;
                         columnSchema = $"{prop.Name} integer";
                         break;
                     case var p when p.NullableBaseType == typeof(long):
-                        columnSchema = $"{prop.Name} bigint";
+                        // columnSchema = $"{prop.Name} bigint";
+                        columnSchema = $"{prop.Name} integer"; // this is needed for primary keys that use long, sqlite limitation
                         break;
                     case var p when p.NullableBaseType == typeof(double):
                         columnSchema = $"{prop.Name} float";
@@ -90,7 +67,10 @@ SELECT @tablesCreated;
                         columnSchema = $"{prop.Name} decimal(18, 3)";
                         break;
                     case var p when p.NullableBaseType == typeof(string):
-                        columnSchema = $"{prop.Name} nvarchar({maxLength})";
+                        if (maxLength != "max")
+                            columnSchema = $"{prop.Name} nvarchar({maxLength})";
+                        else
+                            columnSchema = $"{prop.Name} text";
                         break;
                     case var p when p.NullableBaseType == typeof(DateTime):
                         columnSchema = $"{prop.Name} datetime";
@@ -99,7 +79,7 @@ SELECT @tablesCreated;
                         columnSchema = $"{prop.Name} time";
                         break;
                     case var p when p.NullableBaseType == typeof(byte[]):
-                        columnSchema = $"{prop.Name} varbinary({maxLength})";
+                        columnSchema = $"{prop.Name} blob";
                         break;
                     default:
                         throw new InvalidOperationException($"Unsupported data type: {prop.Type}");
@@ -107,9 +87,7 @@ SELECT @tablesCreated;
             }
             if (prop.CustomAttributes.ToList().Any(x => x.AttributeType == typeof(KeyAttribute)))
             {
-                if (propExtendedType.NullableBaseType != typeof(string) && propExtendedType.NullableBaseType.IsValueType)
-                    columnSchema = columnSchema + " IDENTITY";
-                columnSchema = columnSchema + " PRIMARY KEY NOT NULL";
+                columnSchema = columnSchema + " PRIMARY KEY";
             }
             else if (propExtendedType.Type != typeof(string) && !propExtendedType.IsNullable && !propExtendedType.IsCollection)
                 columnSchema = columnSchema + " NOT NULL";
@@ -129,13 +107,10 @@ SELECT @tablesCreated;
 
         private string CreateTableIfNotExists(string tableName, string tableSchema)
         {
-            return $@"IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='{tableName}' and xtype='U')
-BEGIN
-    CREATE TABLE {tableName} (
-        {tableSchema}
-    );
-   SET @tablesCreated = @tablesCreated + 1;
-END";
+            return $@"CREATE TABLE IF NOT EXISTS {tableName} (
+    {tableSchema}
+);
+";
         }
     }
 }
