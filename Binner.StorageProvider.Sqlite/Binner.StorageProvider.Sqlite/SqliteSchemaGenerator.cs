@@ -2,7 +2,7 @@
 using TypeSupport;
 using TypeSupport.Extensions;
 
-namespace Binner.StorageProvider.SqlServer
+namespace Binner.StorageProvider.Sqlite
 {
     public class SqliteSchemaGenerator<T>
     {

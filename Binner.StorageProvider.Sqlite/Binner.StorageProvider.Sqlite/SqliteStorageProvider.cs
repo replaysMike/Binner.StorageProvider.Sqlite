@@ -5,7 +5,7 @@ using System.Data.SqlTypes;
 using System.Linq.Expressions;
 using TypeSupport.Extensions;
 
-namespace Binner.StorageProvider.SqlServer
+namespace Binner.StorageProvider.Sqlite
 {
     /// <summary>
     /// A storage provider for Sql Server

@@ -1,6 +1,6 @@
 ﻿using System.Data;
 
-namespace Binner.StorageProvider.SqlServer
+namespace Binner.StorageProvider.Sqlite
 {
     internal static class DataExtensions
     {

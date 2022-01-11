@@ -1,4 +1,4 @@
-﻿namespace Binner.StorageProvider.SqlServer
+﻿namespace Binner.StorageProvider.Sqlite
 {
     public class SqliteStorageConfiguration
     {
