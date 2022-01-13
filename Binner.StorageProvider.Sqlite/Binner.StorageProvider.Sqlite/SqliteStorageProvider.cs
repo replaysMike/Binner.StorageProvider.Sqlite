@@ -1,9 +1,16 @@
 ﻿using Binner.Model.Common;
+using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SQLite;
 using System.Data.SqlTypes;
+using System.IO;
+using System.Linq;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 using TypeSupport.Extensions;
+using TypeSupport;
+using static Binner.Model.Common.SystemDefaults;
 
 namespace Binner.StorageProvider.Sqlite
 {
@@ -75,7 +82,7 @@ WHERE Quantity <= LowStockThreshold AND (@UserId IS NULL OR UserId = @UserId)
 ORDER BY 
 CASE WHEN @OrderBy IS NULL THEN PartId ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'PartNumber' THEN PartNumber ELSE NULL END {sortDirection}, 
-CASE WHEN @OrderBy = 'DigikeyPartNumber' THEN DigikeyPartNumber ELSE NULL END {sortDirection}, 
+CASE WHEN @OrderBy = 'DigikeyPartNumber' THEN DigiKeyPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'MouserPartNumber' THEN MouserPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Cost' THEN Cost ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Quantity' THEN Quantity ELSE NULL END {sortDirection}, 
@@ -161,28 +168,28 @@ OR BinNumber2 = @Keywords
 PartsBeginsWith (PartId, Rank) AS
 (
 SELECT PartId, 100 as Rank FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId) AND 
-PartNumber LIKE @Keywords + '%'
-OR DigiKeyPartNumber LIKE @Keywords + '%'
-OR MouserPartNumber LIKE @Keywords + '%'
-OR ManufacturerPartNumber LIKE @Keywords + '%'
-OR Description LIKE @Keywords + '%'
-OR Keywords LIKE @Keywords + '%'
-OR Location LIKE @Keywords + '%'
-OR BinNumber LIKE @Keywords + '%'
-OR BinNumber2 LIKE @Keywords+ '%'
+PartNumber LIKE @Keywords || '%'
+OR DigiKeyPartNumber LIKE @Keywords || '%'
+OR MouserPartNumber LIKE @Keywords || '%'
+OR ManufacturerPartNumber LIKE @Keywords || '%'
+OR Description LIKE @Keywords || '%'
+OR Keywords LIKE @Keywords || '%'
+OR Location LIKE @Keywords || '%'
+OR BinNumber LIKE @Keywords || '%'
+OR BinNumber2 LIKE @Keywords || '%'
 ),
 PartsAny (PartId, Rank) AS
 (
 SELECT PartId, 200 as Rank FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId) AND 
-PartNumber LIKE '%' + @Keywords + '%'
-OR DigiKeyPartNumber LIKE '%' + @Keywords + '%'
-OR MouserPartNumber LIKE '%' + @Keywords + '%'
-OR ManufacturerPartNumber LIKE '%' + @Keywords + '%'
-OR Description LIKE '%' + @Keywords + '%'
-OR Keywords LIKE '%' + @Keywords + '%'
-OR Location LIKE '%' + @Keywords + '%'
-OR BinNumber LIKE '%' + @Keywords + '%'
-OR BinNumber2 LIKE '%' + @Keywords + '%'
+PartNumber LIKE '%' || @Keywords || '%'
+OR DigiKeyPartNumber LIKE '%' || @Keywords || '%'
+OR MouserPartNumber LIKE '%' || @Keywords || '%'
+OR ManufacturerPartNumber LIKE '%' || @Keywords || '%'
+OR Description LIKE '%' || @Keywords || '%'
+OR Keywords LIKE '%' || @Keywords || '%'
+OR Location LIKE '%' || @Keywords || '%'
+OR BinNumber LIKE '%' || @Keywords || '%'
+OR BinNumber2 LIKE '%' || @Keywords || '%'
 ),
 PartsMerged (PartId, Rank) AS
 (
@@ -303,7 +310,7 @@ WHERE (@UserId IS NULL OR UserId = @UserId) {binFilter}
 ORDER BY 
 CASE WHEN @OrderBy IS NULL THEN PartId ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'PartNumber' THEN PartNumber ELSE NULL END {sortDirection}, 
-CASE WHEN @OrderBy = 'DigikeyPartNumber' THEN DigikeyPartNumber ELSE NULL END {sortDirection}, 
+CASE WHEN @OrderBy = 'DigikeyPartNumber' THEN DigiKeyPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'MouserPartNumber' THEN MouserPartNumber ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Cost' THEN Cost ELSE NULL END {sortDirection}, 
 CASE WHEN @OrderBy = 'Quantity' THEN Quantity ELSE NULL END {sortDirection}, 
@@ -651,7 +658,16 @@ VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc
             var modified = 0;
             foreach (var partType in defaultPartTypes.EnumValues)
             {
-                query += $"INSERT INTO PartTypes (Name, DateCreatedUtc) VALUES('{partType.Value}', datetime('now'));\r\n";
+                int? parentPartTypeId = null;
+                var partTypeEnum = (DefaultPartTypes)partType.Key;
+                var field = typeof(DefaultPartTypes).GetField(partType.Value);
+                if (field.IsDefined(typeof(ParentPartTypeAttribute), false))
+                {
+                    var customAttribute = Attribute.GetCustomAttribute(field, typeof(ParentPartTypeAttribute)) as ParentPartTypeAttribute;
+                    parentPartTypeId = (int)customAttribute.Parent;
+                }
+
+                query += $"INSERT INTO PartTypes (Name, ParentPartTypeId, DateCreatedUtc) VALUES('{partType.Value}',{parentPartTypeId?.ToString() ?? "null"},datetime('now'));\r\n";
             }
             using (var connection = new SQLiteConnection(_config.ConnectionString))
             {

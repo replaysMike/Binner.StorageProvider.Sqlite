@@ -1,4 +1,6 @@
-﻿namespace Binner.StorageProvider.Sqlite
+﻿using System.Collections.Generic;
+
+namespace Binner.StorageProvider.Sqlite
 {
     public class SqliteStorageConfiguration
     {
