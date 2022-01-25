@@ -58,9 +58,16 @@ namespace Binner.StorageProvider.Sqlite
             };
         }
 
-        public async Task<long> GetPartsCountAsync(IUserContext userContext)
+        public async Task<long> GetUniquePartsCountAsync(IUserContext userContext)
         {
             var query = $"SELECT COUNT(*) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId);";
+            var result = await ExecuteScalarAsync<long>(query, new { UserId = userContext?.UserId });
+            return result;
+        }
+
+        public async Task<long> GetPartsCountAsync(IUserContext userContext)
+        {
+            var query = $"SELECT SUM(Quantity) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId);";
             var result = await ExecuteScalarAsync<long>(query, new { UserId = userContext?.UserId });
             return result;
         }
