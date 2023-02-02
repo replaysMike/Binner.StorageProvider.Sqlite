@@ -17,7 +17,7 @@ namespace Binner.StorageProvider.Sqlite
 
         private readonly SqliteStorageConfiguration _config;
         private bool _isDisposed;
-
+        private string _databaseName = "Binner";
         public SqliteStorageProvider(IDictionary<string, string> config)
         {
             _config = new SqliteStorageConfiguration(config);
@@ -50,6 +50,22 @@ namespace Binner.StorageProvider.Sqlite
                 FirstPartId = parts.OrderBy(x => x.PartId).First().PartId,
                 LastPartId = parts.OrderBy(x => x.PartId).Last().PartId,
             };
+        }
+
+        public async Task<ConnectionResponse> TestConnectionAsync()
+        {
+            try
+            {
+                using var connection = new SQLiteConnection(_config.ConnectionString);
+                connection.Open();
+                using var sqlCmd = new SQLiteCommand($"SELECT 1", connection);
+                await sqlCmd.ExecuteScalarAsync();
+                return new ConnectionResponse { IsSuccess = true, DatabaseExists = File.Exists(_databaseName), Errors = new List<string>() };
+            }
+            catch (Exception ex)
+            {
+                return new ConnectionResponse { IsSuccess = false, Errors = new List<string>() { ex.GetBaseException().Message } };
+            }
         }
 
         public async Task<long> GetUniquePartsCountAsync(IUserContext userContext)
@@ -708,7 +724,8 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
         private async Task<bool> GenerateDatabaseIfNotExistsAsync<T>()
         {
             var connectionStringBuilder = new SQLiteConnectionStringBuilder(_config.ConnectionString);
-            var schemaGenerator = new SqliteSchemaGenerator<T>(connectionStringBuilder.DataSource);
+            _databaseName = !string.IsNullOrEmpty(connectionStringBuilder.DataSource) ? connectionStringBuilder.DataSource : "Binner";
+            var schemaGenerator = new SqliteSchemaGenerator<T>(_databaseName);
             var partTypesCount = 0l;
 
             var dbFile = connectionStringBuilder.DataSource;
