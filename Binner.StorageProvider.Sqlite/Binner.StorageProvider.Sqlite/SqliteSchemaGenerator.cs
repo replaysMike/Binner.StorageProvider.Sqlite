@@ -84,6 +84,9 @@ namespace Binner.StorageProvider.Sqlite
                     case var p when p.NullableBaseType == typeof(byte[]):
                         columnSchema = $"{prop.Name} blob";
                         break;
+                    case var p when p.NullableBaseType.IsEnum:
+                        columnSchema = $"{prop.Name} integer";
+                        break;
                     default:
                         throw new InvalidOperationException($"Unsupported data type: {prop.Type}");
                 }

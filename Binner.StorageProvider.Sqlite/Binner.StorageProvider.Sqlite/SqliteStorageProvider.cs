@@ -1,15 +1,9 @@
 ﻿using Binner.Model.Common;
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.SQLite;
 using System.Data.SqlTypes;
-using System.IO;
-using System.Linq;
 using System.Linq.Expressions;
-using System.Threading.Tasks;
 using TypeSupport.Extensions;
-using TypeSupport;
 using static Binner.Model.Common.SystemDefaults;
 
 namespace Binner.StorageProvider.Sqlite
@@ -29,7 +23,7 @@ namespace Binner.StorageProvider.Sqlite
             _config = new SqliteStorageConfiguration(config);
             try
             {
-                GenerateDatabaseIfNotExistsAsync<IBinnerDb>()
+                GenerateDatabaseIfNotExistsAsync<BinnerDbV2>()
                     .GetAwaiter()
                     .GetResult();
             }
