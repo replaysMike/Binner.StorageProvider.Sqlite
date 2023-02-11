@@ -81,6 +81,12 @@ namespace Binner.StorageProvider.Sqlite
                     case var p when p.NullableBaseType == typeof(TimeSpan):
                         columnSchema = $"{prop.Name} time";
                         break;
+                    case var p when p.NullableBaseType == typeof(Guid):
+                        columnSchema = $"{prop.Name} nvarchar(36)";
+                        break;
+                    case var p when p.NullableBaseType == typeof(bool):
+                        columnSchema = $"{prop.Name} integer";
+                        break;
                     case var p when p.NullableBaseType == typeof(byte[]):
                         columnSchema = $"{prop.Name} blob";
                         break;

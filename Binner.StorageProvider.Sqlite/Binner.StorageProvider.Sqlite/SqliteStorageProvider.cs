@@ -103,7 +103,7 @@ namespace Binner.StorageProvider.Sqlite
                 UserId = userContext?.UserId
             };
             var countQuery = $"SELECT COUNT(*) FROM Parts WHERE Quantity <= LowStockThreshold AND (@UserId IS NULL OR UserId = @UserId);";
-            var totalItems = await ExecuteScalarAsync<int>(countQuery, parameters);
+            var totalItems = await ExecuteScalarAsync<long>(countQuery, parameters);
 
             var query =
 $@"SELECT * FROM Parts 
@@ -126,7 +126,7 @@ CASE WHEN @OrderBy = 'ManufacturerPartNumber' THEN ManufacturerPartNumber ELSE N
 CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection} 
 LIMIT {request.Results} OFFSET {offsetRecords};";
             var result = await SqlQueryAsync<Part>(query, parameters);
-            return new PaginatedResponse<Part>(totalItems, request.Results, request.Page, result);
+            return new PaginatedResponse<Part>((int)totalItems, request.Results, request.Page, result);
         }
 
         public async Task<Part> AddPartAsync(Part part, IUserContext userContext)
@@ -329,7 +329,7 @@ VALUES (@ParentPartTypeId, @Name, @UserId, @DateCreatedUtc);
             };
 
             var countQuery = $"SELECT COUNT(*) FROM Parts WHERE (@UserId IS NULL OR UserId = @UserId) {binFilter};";
-            var totalItems = await ExecuteScalarAsync<int>(countQuery, parameters);
+            var totalItems = await ExecuteScalarAsync<long>(countQuery, parameters);
 
             var query =
 $@"SELECT * FROM Parts 
@@ -352,7 +352,7 @@ CASE WHEN @OrderBy = 'ManufacturerPartNumber' THEN ManufacturerPartNumber ELSE N
 CASE WHEN @OrderBy = 'DateCreatedUtc' THEN DateCreatedUtc ELSE NULL END {sortDirection} 
 LIMIT {request.Results} OFFSET {offsetRecords};";
             var result = await SqlQueryAsync<Part>(query, parameters);
-            return new PaginatedResponse<Part>(totalItems, request.Results, request.Page, result.ToList());
+            return new PaginatedResponse<Part>((int)totalItems, request.Results, request.Page, result.ToList());
         }
 
         public async Task<PartType> GetPartTypeAsync(long partTypeId, IUserContext userContext)
@@ -429,7 +429,7 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
                 query =
 $@"INSERT INTO OAuthCredentials (Provider, AccessToken, RefreshToken, DateCreatedUtc, DateExpiresUtc, UserId) 
 VALUES (@Provider, @AccessToken, @RefreshToken, @DateCreatedUtc, @DateExpiresUtc, @UserId);";
-                await InsertAsync<OAuthCredential, string>(query, credential, (x, key) => { });
+                await InsertAsync<OAuthCredential, string>(query, credential);
             }
             return credential;
         }
@@ -568,7 +568,75 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
             return storedFile;
         }
 
-        private async Task<T> InsertAsync<T, TKey>(string query, T parameters, Action<T, TKey> keySetter)
+        public async Task<OAuthAuthorization> CreateOAuthRequestAsync(OAuthAuthorization authRequest, IUserContext userContext)
+        {
+            var oAuthRequest = new OAuthRequest
+            {
+                AuthorizationCode = authRequest.AuthorizationCode,
+                AuthorizationReceived = authRequest.AuthorizationReceived,
+                Error = authRequest.Error,
+                ErrorDescription = authRequest.ErrorDescription,
+                Provider = authRequest.Provider,
+                RequestId = authRequest.Id,
+                ReturnToUrl = authRequest.ReturnToUrl,
+                UserId = userContext?.UserId,
+                DateCreatedUtc = DateTime.UtcNow,
+                DateModifiedUtc = DateTime.UtcNow
+            };
+            var query =
+$@"INSERT INTO OAuthRequests (AuthorizationCode, AuthorizationReceived, Error, ErrorDescription, Provider, RequestId, ReturnToUrl, UserId, DateCreatedUtc, DateModifiedUtc) 
+VALUES(@AuthorizationCode, @AuthorizationReceived, @Error, @ErrorDescription, @Provider, @RequestId, @ReturnToUrl, @UserId, @DateCreatedUtc, @DateModifiedUtc);
+";
+            var createdOAuthRequest = await InsertAsync<OAuthRequest, long>(query, oAuthRequest, (x, key) => { x.OAuthRequestId = (int)key; });
+            return authRequest;
+        }
+
+        public async Task<OAuthAuthorization> UpdateOAuthRequestAsync(OAuthAuthorization authRequest, IUserContext userContext)
+        {
+            var oAuthRequest = new OAuthRequest
+            {
+                AuthorizationCode = authRequest.AuthorizationCode,
+                AuthorizationReceived = authRequest.AuthorizationReceived,
+                Error = authRequest.Error,
+                ErrorDescription = authRequest.ErrorDescription,
+                Provider = authRequest.Provider,
+                RequestId = authRequest.Id,
+                ReturnToUrl = authRequest.ReturnToUrl,
+                UserId = userContext?.UserId,
+                DateModifiedUtc = DateTime.UtcNow
+            };
+            var query = $"SELECT OAuthRequestId FROM OAuthRequests WHERE Provider = @Provider AND RequestId = @RequestId AND (@UserId IS NULL OR UserId = @UserId);";
+            var result = await SqlQueryAsync<OAuthRequest>(query, oAuthRequest);
+            if (result.Any())
+            {
+                query = $"UPDATE OAuthRequests SET AuthorizationCode = @AuthorizationCode, AuthorizationReceived = @AuthorizationReceived, Error = @Error, ErrorDescription = @ErrorDescription, DateModifiedUtc = @DateModifiedUtc WHERE Provider = @Provider AND RequestId = @RequestId AND (@UserId IS NULL OR UserId = @UserId);";
+                await ExecuteAsync(query, oAuthRequest);
+            }
+            else
+            {
+                throw new StorageProviderException(nameof(SqliteStorageProvider), $"Record not found for {nameof(OAuthRequest)} = (Provider: {oAuthRequest.Provider}, RequestId: {oAuthRequest.RequestId})");
+            }
+            return authRequest;
+        }
+
+        public async Task<OAuthAuthorization?> GetOAuthRequestAsync(Guid requestId, IUserContext userContext)
+        {
+            var query = $"SELECT * FROM OAuthRequests WHERE RequestId = @RequestId AND (@UserId IS NULL OR UserId = @UserId);";
+            var result = await SqlQueryAsync<OAuthRequest>(query, new { RequestId = requestId, UserId = userContext?.UserId });
+            var oAuthRequest = result.FirstOrDefault();
+            if (oAuthRequest == null) return null;
+
+            return new OAuthAuthorization(oAuthRequest.Provider, oAuthRequest.RequestId)
+            {
+                UserId = userContext?.UserId,
+                Error = oAuthRequest.Error,
+                ErrorDescription = oAuthRequest.ErrorDescription,
+                AuthorizationReceived = false,
+                ReturnToUrl = oAuthRequest.ReturnToUrl ?? string.Empty,
+            };
+        }
+
+        private async Task<T> InsertAsync<T, TKey>(string query, T parameters, Action<T, TKey>? keySetter = null)
         {
             using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
@@ -578,7 +646,7 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
                     sqlCmd.Parameters.AddRange(CreateParameters<T>(parameters));
                     sqlCmd.CommandType = CommandType.Text;
                     var result = await sqlCmd.ExecuteScalarAsync();
-                    keySetter.Invoke(parameters, (TKey)(object)connection.LastInsertRowId);
+                    keySetter?.Invoke(parameters, (TKey)(object)connection.LastInsertRowId);
                 }
                 connection.Close();
             }
@@ -697,6 +765,10 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
                 case var p when p.IsCollection:
                 case var a when a.IsArray:
                     return obj.ToString().Split(new string[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+                case var p when p.Type == typeof(Guid):
+                    return new Guid(obj.ToString());
+                case var p when p.Type == typeof(bool):
+                    return (long)obj > 0;
                 default:
                     return obj;
             }
@@ -716,6 +788,10 @@ LIMIT {request.Results} OFFSET {offsetRecords};";
                     if (((DateTime)obj) == DateTime.MinValue)
                         return SqlDateTime.MinValue.Value;
                     return obj;
+                case var p when p.Type == typeof(Guid):
+                    return obj.ToString();
+                case var p when p.Type == typeof(bool):
+                    return (bool)obj == true ? 1L : 0L;
                 default:
                     return obj;
             }
