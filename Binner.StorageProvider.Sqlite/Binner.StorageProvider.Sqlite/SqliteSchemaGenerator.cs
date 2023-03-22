@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
+﻿using System.ComponentModel.DataAnnotations;
 using TypeSupport;
 using TypeSupport.Extensions;
 
@@ -21,6 +18,22 @@ namespace Binner.StorageProvider.Sqlite
 
         public string CreateTableSchemaIfNotExists() => $@"{string.Join("\r\n", GetTableSchemas())}";
 
+        public ICollection<string> CreateColumnSchemas() => GetColumnSchemas();
+
+        private ICollection<string> GetColumnSchemas()
+        {
+            var tableSchemas = new List<string>();
+            foreach (var tableProperty in _tables)
+            {
+                var tableExtendedType = tableProperty.Type;
+                var columnProps = tableExtendedType.ElementType.GetProperties(PropertyOptions.HasGetter);
+                // add schema new columns added
+                foreach (var columnProp in columnProps)
+                    tableSchemas.Add(CreateTableColumnIfNotExists(tableProperty.Name, columnProp));
+            }
+            return tableSchemas;
+        }
+
         private ICollection<string> GetTableSchemas()
         {
             var tableSchemas = new List<string>();
@@ -32,9 +45,6 @@ namespace Binner.StorageProvider.Sqlite
                 foreach (var columnProp in columnProps)
                     tableSchema.Add(GetColumnSchema(columnProp));
                 tableSchemas.Add(CreateTableIfNotExists(tableProperty.Name, string.Join(",\r\n", tableSchema)));
-                // also add schema new columns added
-                foreach (var columnProp in columnProps)
-                    tableSchemas.Add(CreateTableColumnIfNotExists(tableProperty.Name, columnProp));
             }
             return tableSchemas;
         }
@@ -145,9 +155,7 @@ namespace Binner.StorageProvider.Sqlite
         private string CreateTableColumnIfNotExists(string tableName, ExtendedProperty columnProp)
         {
             var columnSchema = GetColumnSchema(columnProp, true);
-            return $@"SELECT CASE (SELECT count(*) FROM pragma_table_info('{tableName}') c WHERE c.name = '{columnProp.Name}') WHEN 0 THEN 
-    ALTER TABLE {tableName} ADD {columnSchema};
-END";
+            return $@"ALTER TABLE {tableName} ADD {columnSchema};";
         }
 
         private string CreateTableIfNotExists(string tableName, string tableSchema)

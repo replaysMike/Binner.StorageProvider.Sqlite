@@ -1176,12 +1176,28 @@ VALUES(@PartId, @Name, @SupplierPartNumber, @Cost, @QuantityAvailable, @MinimumO
 
             // Ensure table schema exists
             var query = schemaGenerator.CreateTableSchemaIfNotExists();
+            var tableUpdateSchemas = schemaGenerator.CreateColumnSchemas();
             using (var connection = new SQLiteConnection(_config.ConnectionString))
             {
                 connection.Open();
                 using (var sqlCmd = new SQLiteCommand(query, connection))
                 {
                     await sqlCmd.ExecuteNonQueryAsync();
+                }
+                // also update table columns, but do them one at a time and ignore errors.
+                // this is specific to sqlite as you can't conditionally add columns (not as ideal).
+                foreach (var tableUpdateSchema in tableUpdateSchemas)
+                {
+                    using var sqlCmd = new SQLiteCommand(tableUpdateSchema, connection);
+                    try
+                    {
+                        await sqlCmd.ExecuteNonQueryAsync();
+                    }
+                    catch (SQLiteException ex)
+                    {
+                        if (!ex.Message.Contains("duplicate column name"))
+                            throw;
+                    }
                 }
                 // if seed data is missing, run the initial seed
                 using (var sqlCmd = new SQLiteCommand("SELECT COUNT(*) FROM PartTypes", connection))
